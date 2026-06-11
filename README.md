@@ -13,6 +13,14 @@ Point it at your paper PDF, supplementary PDFs (including annotated/reMarkable e
 
 The report is tiered (🔴 must fix / 🟡 should review / 🟢 passed) with exact page numbers, timestamps, and field names — and Claude offers to apply the automatable fixes (always to a new file, never overwriting your original).
 
+## Web version
+
+No Claude Code? Use the hosted page: **https://weiwu0115.github.io/submission-check/**
+
+Drop in your paper PDF + your own Anthropic API key and get a tiered report in the browser. It's a static page with no backend — your files go only to the Anthropic API, nothing else. PDF metadata is extracted client-side (Claude can't see metadata in PDF blocks) and judged along with the full text.
+
+The web version is the lighter check: it can't sample video frames, follow hyperlinks, or visually inspect every page the way the skill below can. For a real pre-submission pass, use the skill.
+
 ## Install
 
 ```bash

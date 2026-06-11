@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Paper Submission Checker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f8f7f5;
+    --surface: #ffffff;
+    --surface2: #f3f2ef;
+    --border: rgba(0,0,0,0.10);
+    --border-strong: rgba(0,0,0,0.18);
+    --text: #1a1917;
+    --text-muted: #6b6a67;
+    --text-faint: #9e9c98;
+    --accent: #2563eb;
+    --accent-bg: #eff6ff;
+    --accent-text: #1d4ed8;
+    --danger: #dc2626;
+    --danger-bg: #fef2f2;
+    --danger-text: #b91c1c;
+    --warn: #d97706;
+    --warn-bg: #fffbeb;
+    --warn-text: #92400e;
+    --ok: #16a34a;
+    --ok-bg: #f0fdf4;
+    --ok-text: #15803d;
+    --note-bg: #f8f7f5;
+    --note-text: #6b6a67;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .logo-icon {
+    width: 30px;
+    height: 30px;
+    background: var(--text);
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--surface);
+    font-size: 15px;
+  }
+
+  .header-badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    background: var(--accent-bg);
+    color: var(--accent-text);
+    border-radius: 20px;
+    font-weight: 500;
+  }
+
+  /* ── Layout ── */
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 4rem;
+  }
+
+  .page-title {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    margin-bottom: 6px;
+  }
+
+  .page-sub {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 2rem;
+  }
+
+  /* ── Card ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .card-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 12px;
+  }
+
+  /* ── Upload zones ── */
+  .upload-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 10px;
+  }
+
+  .zone {
+    border: 1.5px dashed var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 1.1rem 0.75rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    background: var(--surface);
+    position: relative;
+    user-select: none;
+  }
+
+  .zone:hover { background: var(--bg); border-color: var(--accent); }
+  .zone.dragover { background: var(--accent-bg); border-color: var(--accent); }
+  .zone.has-file { border-style: solid; border-color: var(--ok); background: var(--ok-bg); }
+
+  .zone input[type=file] { display: none; }
+
+  .zone-icon {
+    font-size: 22px;
+    color: var(--text-faint);
+    margin-bottom: 5px;
+    display: block;
+  }
+  .zone.has-file .zone-icon { color: var(--ok); }
+
+  .zone-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    display: block;
+  }
+
+  .zone-sub {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 2px;
+    display: block;
+  }
+
+  .zone-filename {
+    font-size: 11px;
+    color: var(--ok-text);
+    margin-top: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: 'JetBrains Mono', monospace;
+    display: block;
+  }
+
+  /* ── Form fields ── */
+  .field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 10px;
+  }
+
+  select, input[type=text] {
+    width: 100%;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    padding: 8px 11px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  select:focus, input[type=text]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+  }
+
+  /* ── API key ── */
+  .api-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .api-row input { flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+  .api-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-faint);
+    font-size: 16px;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    transition: color 0.15s;
+  }
+  .api-toggle:hover { color: var(--text); }
+
+  .api-note {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* ── Run button ── */
+  .btn-run {
+    width: 100%;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--text);
+    color: var(--surface);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: opacity 0.15s, transform 0.1s;
+    margin-top: 1rem;
+  }
+
+  .btn-run:hover:not(:disabled) { opacity: 0.85; }
+  .btn-run:active:not(:disabled) { transform: scale(0.99); }
+  .btn-run:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* ── Results ── */
+  .result-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1.5rem;
+    margin-top: 1rem;
+  }
+
+  .summary-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 1.25rem;
+  }
+
+  .chip {
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid transparent;
+  }
+
+  .chip-danger { background: var(--danger-bg); color: var(--danger-text); border-color: rgba(220,38,38,0.2); }
+  .chip-warn   { background: var(--warn-bg);   color: var(--warn-text);   border-color: rgba(217,119,6,0.2); }
+  .chip-ok     { background: var(--ok-bg);     color: var(--ok-text);     border-color: rgba(22,163,74,0.2); }
+  .chip-note   { background: var(--note-bg);   color: var(--note-text);   border-color: var(--border); }
+
+  .cat-heading {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-faint);
+    padding: 10px 0 6px;
+  }
+
+  .issue-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 7px;
+    border-radius: 20px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-top: 1px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .badge-high { background: var(--danger-bg); color: var(--danger-text); }
+  .badge-med  { background: var(--warn-bg);   color: var(--warn-text); }
+  .badge-low  { background: var(--note-bg);   color: var(--note-text); border: 1px solid var(--border); }
+  .badge-ok   { background: var(--ok-bg);     color: var(--ok-text); }
+
+  .issue-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .issue-detail {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 1px;
+    line-height: 1.5;
+  }
+
+  .issue-loc {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  /* ── Loading ── */
+  .loading-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2.5rem 0;
+    gap: 12px;
+  }
+
+  .dots {
+    display: flex;
+    gap: 5px;
+  }
+
+  .dots span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    animation: dot 1.2s infinite;
+  }
+
+  .dots span:nth-child(2) { animation-delay: 0.2s; }
+  .dots span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes dot {
+    0%,80%,100% { opacity: 0.2; }
+    40%          { opacity: 1; }
+  }
+
+  .loading-msg {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  /* ── Error ── */
+  .error-box {
+    background: var(--danger-bg);
+    border: 1px solid rgba(220,38,38,0.2);
+    border-radius: var(--radius-sm);
+    padding: 1rem 1.25rem;
+    font-size: 13px;
+    color: var(--danger-text);
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  /* ── Footer ── */
+  footer {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-faint);
+    padding: 2rem 0 1rem;
+    border-top: 1px solid var(--border);
+    margin-top: 3rem;
+  }
+
+  footer a { color: var(--text-muted); }
+
+  /* ── Responsive ── */
+  @media (max-width: 520px) {
+    main { padding: 1.5rem 1rem 3rem; }
+    .field-row { grid-template-columns: 1fr; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dots span { animation: none; opacity: 0.5; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="logo" href="#">
+    <div class="logo-icon"><i class="ti ti-shield-check" aria-hidden="true"></i></div>
+    Paper Checker
+  </a>
+  <span class="header-badge">AI-powered</span>
+</header>
+
+<main>
+  <h1 class="page-title">Submission anonymity checker</h1>
+  <p class="page-sub">Upload your paper and optional files. Claude scans for anonymity violations and desk-reject risks before you submit. For a deeper fully-local check (video frames, hyperlinks, every page visually), use the <a href="https://github.com/WeiWu0115/submission-check" style="color:var(--accent-text);">Claude Code skill</a>.</p>
+
+  <!-- Upload -->
+  <div class="card">
+    <div class="card-label">Files</div>
+    <div class="upload-grid">
+      <div class="zone" id="zone-paper"
+           onclick="document.getElementById('input-paper').click()"
+           ondragover="handleDrag(event,'zone-paper')"
+           ondragleave="handleLeave('zone-paper')"
+           ondrop="handleDrop(event,'paper')">
+        <input type="file" id="input-paper" accept=".pdf" onchange="setFile('paper',this)">
+        <i class="ti ti-file-text zone-icon" aria-hidden="true"></i>
+        <span class="zone-label">Main paper</span>
+        <span class="zone-sub">PDF · required</span>
+        <span class="zone-filename" id="name-paper"></span>
+      </div>
+      <div class="zone" id="zone-remark"
+           onclick="document.getElementById('input-remark').click()"
+           ondragover="handleDrag(event,'zone-remark')"
+           ondragleave="handleLeave('zone-remark')"
+           ondrop="handleDrop(event,'remark')">
+        <input type="file" id="input-remark" accept=".pdf" onchange="setFile('remark',this)">
+        <i class="ti ti-message-report zone-icon" aria-hidden="true"></i>
+        <span class="zone-label">Supplementary / rebuttal</span>
+        <span class="zone-sub">PDF · optional</span>
+        <span class="zone-filename" id="name-remark"></span>
+      </div>
+      <div class="zone" id="zone-video"
+           onclick="document.getElementById('input-video').click()"
+           ondragover="handleDrag(event,'zone-video')"
+           ondragleave="handleLeave('zone-video')"
+           ondrop="handleDrop(event,'video')">
+        <input type="file" id="input-video" accept="video/*" onchange="setFile('video',this)">
+        <i class="ti ti-video zone-icon" aria-hidden="true"></i>
+        <span class="zone-label">Video</span>
+        <span class="zone-sub">MP4 / MOV · optional</span>
+        <span class="zone-filename" id="name-video"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context -->
+  <div class="card">
+    <div class="card-label">Venue &amp; context</div>
+    <select id="venue-type">
+      <option value="">Select venue type...</option>
+      <option value="CHI">CHI (double-blind)</option>
+      <option value="CHI PLAY">CHI PLAY (double-blind)</option>
+      <option value="UIST">UIST (double-blind)</option>
+      <option value="TEI">TEI (double-blind)</option>
+      <option value="DIS">DIS (double-blind)</option>
+      <option value="NeurIPS">NeurIPS (double-blind)</option>
+      <option value="ICML">ICML (double-blind)</option>
+      <option value="ICCV">ICCV (double-blind)</option>
+      <option value="CVPR">CVPR (double-blind)</option>
+      <option value="ACL">ACL / EMNLP (double-blind)</option>
+      <option value="AIIDE">AIIDE</option>
+      <option value="IEEE_CoG">IEEE CoG</option>
+      <option value="custom">Custom / other</option>
+    </select>
+    <div class="field-row">
+      <input type="text" id="author-names" placeholder="Author names (comma-separated)">
+      <input type="text" id="institution" placeholder="Institution / lab name">
+    </div>
+  </div>
+
+  <!-- API Key -->
+  <div class="card">
+    <div class="card-label">Anthropic API key</div>
+    <div class="api-row">
+      <input type="password" id="api-key" placeholder="sk-ant-api03-…" oninput="updateBtn()">
+      <button class="api-toggle" onclick="toggleKey()" aria-label="Toggle visibility" title="Show / hide key">
+        <i class="ti ti-eye" id="eye-icon" aria-hidden="true"></i>
+      </button>
+    </div>
+    <p class="api-note">
+      <i class="ti ti-lock" style="font-size:12px;" aria-hidden="true"></i>
+      Your key and files are sent only to <a href="https://api.anthropic.com" target="_blank" rel="noopener" style="color:var(--accent-text);">api.anthropic.com</a> — this page has no server of its own. The key is never stored.
+    </p>
+  </div>
+
+  <button class="btn-run" id="btn-run" onclick="runCheck()" disabled>
+    <i class="ti ti-shield-search" aria-hidden="true"></i>
+    Run anonymity &amp; desk-reject check
+  </button>
+
+  <div id="result-area"></div>
+</main>
+
+<footer>
+  Paper Checker · powered by Claude · no middle server — your unpublished work goes only to the Anthropic API<br>
+  open source: <a href="https://github.com/WeiWu0115/submission-check" target="_blank" rel="noopener">WeiWu0115/submission-check</a>
+</footer>
+
+<script>
+const files = { paper: null, remark: null, video: null };
+
+// The API rejects requests larger than ~32 MB; base64 inflates by ~33%.
+const MAX_PDF_BYTES = 20 * 1024 * 1024;
+
+const REPORT_SCHEMA = {
+  type: 'object',
+  properties: {
+    issues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          category: { type: 'string', enum: ['anonymity', 'desk_reject', 'quality'] },
+          severity: { type: 'string', enum: ['high', 'medium', 'low', 'ok'] },
+          issue:    { type: 'string', description: 'Short title, max 6 words' },
+          detail:   { type: 'string', description: '1-2 sentence explanation' },
+          location: { type: 'string', description: 'Where in the paper (page / section)' }
+        },
+        required: ['category', 'severity', 'issue', 'detail', 'location'],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ['issues'],
+  additionalProperties: false
+};
+
+function setFile(key, input) {
+  const f = input.files[0];
+  if (!f) return;
+  files[key] = f;
+  document.getElementById('name-' + key).textContent = f.name;
+  document.getElementById('zone-' + key).classList.add('has-file');
+  updateBtn();
+}
+
+function handleDrag(e, zoneId) {
+  e.preventDefault();
+  document.getElementById(zoneId).classList.add('dragover');
+}
+function handleLeave(zoneId) {
+  document.getElementById(zoneId).classList.remove('dragover');
+}
+function handleDrop(e, key) {
+  e.preventDefault();
+  document.getElementById('zone-' + key).classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (!f) return;
+  files[key] = f;
+  document.getElementById('name-' + key).textContent = f.name;
+  document.getElementById('zone-' + key).classList.add('has-file');
+  updateBtn();
+}
+
+function updateBtn() {
+  const hasFile = !!files.paper;
+  const hasKey  = document.getElementById('api-key').value.trim().length > 10;
+  document.getElementById('btn-run').disabled = !(hasFile && hasKey);
+}
+
+function toggleKey() {
+  const inp = document.getElementById('api-key');
+  const icon = document.getElementById('eye-icon');
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    icon.className = 'ti ti-eye-off';
+  } else {
+    inp.type = 'password';
+    icon.className = 'ti ti-eye';
+  }
+}
+
+function toBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload  = () => res(r.result.split(',')[1]);
+    r.onerror = () => rej(new Error('Failed to read file'));
+    r.readAsDataURL(file);
+  });
+}
+
+// Claude reads PDF text + page images but NOT the document-info/XMP metadata —
+// the single most common anonymity leak. Extract it client-side and hand it over.
+async function extractPdfMetadata(file) {
+  try {
+    const bytes = await file.arrayBuffer();
+    const doc = await PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+    const fields = {
+      Title: doc.getTitle(), Author: doc.getAuthor(), Subject: doc.getSubject(),
+      Keywords: doc.getKeywords(), Creator: doc.getCreator(), Producer: doc.getProducer()
+    };
+    const found = Object.entries(fields).filter(([, v]) => v && String(v).trim());
+    if (!found.length) return `${file.name}: no document-info metadata fields set`;
+    return `${file.name}: ` + found.map(([k, v]) => `${k}="${String(v).trim()}"`).join(' | ');
+  } catch (e) {
+    return `${file.name}: metadata could not be parsed in the browser — flag for a manual check`;
+  }
+}
+
+async function runCheck() {
+  const btn = document.getElementById('btn-run');
+  btn.disabled = true;
+
+  const ra = document.getElementById('result-area');
+  ra.innerHTML = `
+    <div class="result-card">
+      <div class="loading-wrap">
+        <div class="dots"><span></span><span></span><span></span></div>
+        <span class="loading-msg">Reading metadata, then analyzing with Claude… this can take a minute</span>
+      </div>
+    </div>`;
+
+  const apiKey      = document.getElementById('api-key').value.trim();
+  const venue       = document.getElementById('venue-type').value;
+  const authors     = document.getElementById('author-names').value.trim();
+  const institution = document.getElementById('institution').value.trim();
+
+  const pdfs = [files.paper, files.remark].filter(Boolean);
+  const totalBytes = pdfs.reduce((s, f) => s + f.size, 0);
+  if (totalBytes > MAX_PDF_BYTES) {
+    showError(`PDFs total ${(totalBytes / 1048576).toFixed(1)} MB — the API request limit is ~32 MB (base64 inflates files by a third). Compress the PDF (e.g. "Reduce File Size" in Preview) and retry.`);
+    btn.disabled = false; updateBtn();
+    return;
+  }
+
+  const contentBlocks = [];
+
+  try {
+    contentBlocks.push({
+      type: 'document',
+      source: { type: 'base64', media_type: 'application/pdf', data: await toBase64(files.paper) },
+      title: 'Main paper'
+    });
+    if (files.remark) {
+      contentBlocks.push({
+        type: 'document',
+        source: { type: 'base64', media_type: 'application/pdf', data: await toBase64(files.remark) },
+        title: 'Supplementary / rebuttal PDF'
+      });
+    }
+  } catch (e) {
+    showError('Could not read PDF: ' + e.message);
+    btn.disabled = false; updateBtn();
+    return;
+  }
+
+  const metadataReports = await Promise.all(pdfs.map(extractPdfMetadata));
+  const filenames = Object.values(files).filter(Boolean).map(f => f.name).join(', ');
+
+  const ctx = [
+    venue       ? `Submission venue: ${venue}` : '',
+    authors     ? `Author names to detect: ${authors}` : '',
+    institution ? `Institution / lab to detect: ${institution}` : '',
+    `Uploaded filenames (check these for identity leaks too): ${filenames}`,
+    `PDF document-info metadata, extracted client-side (you cannot see PDF metadata directly — judge these fields for identity leaks; an Author/Creator field containing a person's name or username is a high-severity anonymity violation):\n${metadataReports.join('\n')}`,
+    files.video ? `A supplemental video was also uploaded (${files.video.name}). Video content cannot be analyzed here — add a medium-severity anonymity item reminding the author to manually check the video's metadata tags, title cards, faces, and spoken names.` : ''
+  ].filter(Boolean).join('\n\n');
+
+  contentBlocks.push({
+    type: 'text',
+    text: `You are an expert reviewer checking a paper submission for anonymity violations and desk-reject risks.\n\nContext:\n${ctx}\n\nCheck ALL of the following and populate the issues array:\n\n1. ANONYMITY violations (category: "anonymity", severity: high/medium):\n- Author names anywhere (title page, acknowledgments, headers, figure captions, screenshots, URLs)\n- Institution / affiliation names, including indirect clues (campus names, "our university in <city>", deployment sites unique to one team)\n- First-person self-citations ("our previous work [12]") — venues require third-person\n- Acknowledgments naming people, grants, or grant numbers\n- IRB statements naming the real institution\n- GitHub / project / OSF / Drive URLs visible in the text that contain usernames or are not anonymized\n- Email addresses\n- Tool or system names uniquely tied to the authors\n\n2. DESK REJECT risks (category: "desk_reject", severity: high/medium/low):\n- Paper likely over the venue's page limit\n- Wrong template or genre for the venue\n- Missing required sections (abstract, related work, conclusion); broken citations ("??", "[?]")\n- Figures without captions; missing ethics or limitations statement where the venue requires one\n- Copyright / watermark on figures suggesting direct copy\n- Non-anonymous supplemental material indicators\n\n3. GENERAL QUALITY flags (category: "quality", severity: low):\n- Abstract does not summarize contributions clearly\n- No clear research question stated\n- Missing evaluation / study details\n\nFor every issue give a precise location (page number / section). If a category has no issues, include exactly one item for it with severity "ok" confirming what was checked. Be thorough but do not invent issues.`
+  });
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-opus-4-8',
+        max_tokens: 16000,
+        thinking: { type: 'adaptive' },
+        output_config: { format: { type: 'json_schema', schema: REPORT_SCHEMA } },
+        messages: [{ role: 'user', content: contentBlocks }]
+      })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error?.message || `API error ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    if (data.stop_reason === 'refusal') {
+      throw new Error('The model declined to analyze this request.');
+    }
+    if (data.stop_reason === 'max_tokens') {
+      throw new Error('The report was truncated (max_tokens reached). Try again with a shorter document.');
+    }
+    // With output_config.format the text block is guaranteed valid JSON
+    // matching REPORT_SCHEMA; thinking blocks may precede it, so find by type.
+    const textBlock = data.content.find(b => b.type === 'text');
+    renderResults(JSON.parse(textBlock.text).issues);
+  } catch (e) {
+    showError(e.message);
+  }
+
+  btn.disabled = false;
+  updateBtn();
+}
+
+function showError(msg) {
+  document.getElementById('result-area').innerHTML = `
+    <div class="result-card">
+      <div class="error-box">
+        <i class="ti ti-alert-circle" style="font-size:18px;flex-shrink:0;" aria-hidden="true"></i>
+        <div><strong>Analysis failed</strong><br>${esc(msg)}</div>
+      </div>
+    </div>`;
+}
+
+function renderResults(issues) {
+  const high = issues.filter(i => i.severity === 'high').length;
+  const med  = issues.filter(i => i.severity === 'medium').length;
+  const low  = issues.filter(i => i.severity === 'low').length;
+
+  const catLabel = { anonymity: 'Anonymity', desk_reject: 'Desk reject risk', quality: 'Quality notes' };
+  const catOrder = ['anonymity', 'desk_reject', 'quality'];
+
+  let html = '<div class="result-card">';
+
+  // Summary chips
+  html += '<div class="summary-row">';
+  if (high > 0)  html += `<span class="chip chip-danger">${high} critical</span>`;
+  if (med  > 0)  html += `<span class="chip chip-warn">${med} warning</span>`;
+  if (low  > 0)  html += `<span class="chip chip-note">${low} suggestion</span>`;
+  if (high === 0 && med === 0) html += `<span class="chip chip-ok"><i class="ti ti-circle-check" style="vertical-align:-2px;margin-right:3px;" aria-hidden="true"></i>No critical issues found</span>`;
+  html += '</div>';
+
+  for (const cat of catOrder) {
+    const catIssues = issues.filter(i => i.category === cat);
+    if (!catIssues.length) continue;
+    html += `<div class="cat-heading">${catLabel[cat] || cat}</div>`;
+    for (const iss of catIssues) {
+      const bClass = iss.severity === 'high' ? 'badge-high'
+                   : iss.severity === 'medium' ? 'badge-med'
+                   : iss.severity === 'ok'  ? 'badge-ok'
+                   : 'badge-low';
+      const bLabel = iss.severity === 'high'   ? 'Critical'
+                   : iss.severity === 'medium' ? 'Warning'
+                   : iss.severity === 'ok'     ? '✓ OK'
+                   : 'Note';
+      html += `
+        <div class="issue-row">
+          <span class="badge ${bClass}">${bLabel}</span>
+          <div>
+            <div class="issue-title">${esc(iss.issue)}</div>
+            <div class="issue-detail">${esc(iss.detail)}</div>
+            ${iss.location ? `<div class="issue-loc"><i class="ti ti-map-pin" style="font-size:11px;" aria-hidden="true"></i>${esc(iss.location)}</div>` : ''}
+          </div>
+        </div>`;
+    }
+  }
+
+  html += '</div>';
+  document.getElementById('result-area').innerHTML = html;
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
