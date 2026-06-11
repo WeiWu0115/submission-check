@@ -191,6 +191,33 @@
     display: block;
   }
 
+  /* ── Per-file check buttons ── */
+  .check-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+  }
+
+  .btn-mini {
+    padding: 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: background 0.15s, opacity 0.15s;
+  }
+  .btn-mini:hover:not(:disabled) { background: var(--bg); }
+  .btn-mini:disabled { opacity: 0.35; cursor: not-allowed; }
+
   /* ── Form fields ── */
   .field-row {
     display: grid;
@@ -280,6 +307,17 @@
     box-shadow: var(--shadow);
     padding: 1.5rem;
     margin-top: 1rem;
+  }
+
+  .result-file {
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text);
   }
 
   .summary-row {
@@ -442,11 +480,11 @@
 
 <main>
   <h1 class="page-title">Submission anonymity checker</h1>
-  <p class="page-sub">Upload your paper and optional files. Claude scans for anonymity violations and desk-reject risks before you submit. For a deeper fully-local check (video frames, hyperlinks, every page visually), use the <a href="https://github.com/WeiWu0115/submission-check" style="color:var(--accent-text);">Claude Code skill</a>.</p>
+  <p class="page-sub">Upload any of your submission files and check each one independently — or all together. Claude scans for anonymity violations and desk-reject risks before you submit. For a deeper fully-local check, use the <a href="https://github.com/WeiWu0115/submission-check" style="color:var(--accent-text);">Claude Code skill</a>.</p>
 
   <!-- Upload -->
   <div class="card">
-    <div class="card-label">Files</div>
+    <div class="card-label">Files — each can be checked on its own</div>
     <div class="upload-grid">
       <div class="zone" id="zone-paper"
            onclick="document.getElementById('input-paper').click()"
@@ -456,7 +494,7 @@
         <input type="file" id="input-paper" accept=".pdf" onchange="setFile('paper',this)">
         <i class="ti ti-file-text zone-icon" aria-hidden="true"></i>
         <span class="zone-label">Main paper</span>
-        <span class="zone-sub">PDF · required</span>
+        <span class="zone-sub">PDF</span>
         <span class="zone-filename" id="name-paper"></span>
       </div>
       <div class="zone" id="zone-remark"
@@ -467,7 +505,7 @@
         <input type="file" id="input-remark" accept=".pdf" onchange="setFile('remark',this)">
         <i class="ti ti-message-report zone-icon" aria-hidden="true"></i>
         <span class="zone-label">Supplementary / rebuttal</span>
-        <span class="zone-sub">PDF · optional</span>
+        <span class="zone-sub">PDF</span>
         <span class="zone-filename" id="name-remark"></span>
       </div>
       <div class="zone" id="zone-video"
@@ -478,9 +516,20 @@
         <input type="file" id="input-video" accept="video/*" onchange="setFile('video',this)">
         <i class="ti ti-video zone-icon" aria-hidden="true"></i>
         <span class="zone-label">Video</span>
-        <span class="zone-sub">MP4 / MOV · optional</span>
+        <span class="zone-sub">MP4 / MOV — frames sampled in-browser</span>
         <span class="zone-filename" id="name-video"></span>
       </div>
+    </div>
+    <div class="check-row">
+      <button class="btn-mini" id="btn-check-paper" onclick="checkPart('paper')" disabled>
+        <i class="ti ti-shield-search" aria-hidden="true"></i> Check paper
+      </button>
+      <button class="btn-mini" id="btn-check-remark" onclick="checkPart('remark')" disabled>
+        <i class="ti ti-shield-search" aria-hidden="true"></i> Check supplementary
+      </button>
+      <button class="btn-mini" id="btn-check-video" onclick="checkPart('video')" disabled>
+        <i class="ti ti-shield-search" aria-hidden="true"></i> Check video
+      </button>
     </div>
   </div>
 
@@ -524,9 +573,9 @@
     </p>
   </div>
 
-  <button class="btn-run" id="btn-run" onclick="runCheck()" disabled>
+  <button class="btn-run" id="btn-run" onclick="checkAll()" disabled>
     <i class="ti ti-shield-search" aria-hidden="true"></i>
-    Run anonymity &amp; desk-reject check
+    Check all uploaded files
   </button>
 
   <div id="result-area"></div>
@@ -539,6 +588,8 @@
 
 <script>
 const files = { paper: null, remark: null, video: null };
+const KINDS = ['paper', 'remark', 'video'];
+let running = false;
 
 // The API rejects requests larger than ~32 MB; base64 inflates by ~33%.
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
@@ -555,7 +606,7 @@ const REPORT_SCHEMA = {
           severity: { type: 'string', enum: ['high', 'medium', 'low', 'ok'] },
           issue:    { type: 'string', description: 'Short title, max 6 words' },
           detail:   { type: 'string', description: '1-2 sentence explanation' },
-          location: { type: 'string', description: 'Where in the paper (page / section)' }
+          location: { type: 'string', description: 'Page / section, or timestamp for video' }
         },
         required: ['category', 'severity', 'issue', 'detail', 'location'],
         additionalProperties: false
@@ -565,6 +616,8 @@ const REPORT_SCHEMA = {
   required: ['issues'],
   additionalProperties: false
 };
+
+/* ── File handling ── */
 
 function setFile(key, input) {
   const f = input.files[0];
@@ -594,9 +647,11 @@ function handleDrop(e, key) {
 }
 
 function updateBtn() {
-  const hasFile = !!files.paper;
-  const hasKey  = document.getElementById('api-key').value.trim().length > 10;
-  document.getElementById('btn-run').disabled = !(hasFile && hasKey);
+  const hasKey = document.getElementById('api-key').value.trim().length > 10;
+  for (const kind of KINDS) {
+    document.getElementById('btn-check-' + kind).disabled = !(files[kind] && hasKey && !running);
+  }
+  document.getElementById('btn-run').disabled = !(KINDS.some(k => files[k]) && hasKey && !running);
 }
 
 function toggleKey() {
@@ -620,6 +675,8 @@ function toBase64(file) {
   });
 }
 
+/* ── Client-side extraction ── */
+
 // Claude reads PDF text + page images but NOT the document-info/XMP metadata —
 // the single most common anonymity leak. Extract it client-side and hand it over.
 async function extractPdfMetadata(file) {
@@ -638,115 +695,88 @@ async function extractPdfMetadata(file) {
   }
 }
 
-async function runCheck() {
-  const btn = document.getElementById('btn-run');
-  btn.disabled = true;
+// Decode the video locally and grab evenly-spaced frames (incl. near the start
+// and end, where title/credit cards live). Only the JPEG frames leave the
+// browser — never the video file itself.
+function sampleVideoFrames(file, maxFrames = 14) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.src = url;
 
-  const ra = document.getElementById('result-area');
-  ra.innerHTML = `
-    <div class="result-card">
-      <div class="loading-wrap">
-        <div class="dots"><span></span><span></span><span></span></div>
-        <span class="loading-msg">Reading metadata, then analyzing with Claude… this can take a minute</span>
-      </div>
-    </div>`;
+    const fail = (msg) => { URL.revokeObjectURL(url); reject(new Error(msg)); };
+    video.onerror = () => fail('this video format cannot be decoded by your browser');
 
-  const apiKey      = document.getElementById('api-key').value.trim();
-  const venue       = document.getElementById('venue-type').value;
-  const authors     = document.getElementById('author-names').value.trim();
-  const institution = document.getElementById('institution').value.trim();
+    video.onloadeddata = async () => {
+      try {
+        const dur = video.duration;
+        if (!isFinite(dur) || dur <= 0) return fail('could not read video duration');
+        const n = Math.min(maxFrames, Math.max(4, Math.round(dur / 10) + 2));
+        const scale = Math.min(1, 1024 / (video.videoWidth || 1024));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(2, Math.round(video.videoWidth * scale));
+        canvas.height = Math.max(2, Math.round(video.videoHeight * scale));
+        const ctx = canvas.getContext('2d');
 
-  const pdfs = [files.paper, files.remark].filter(Boolean);
-  const totalBytes = pdfs.reduce((s, f) => s + f.size, 0);
-  if (totalBytes > MAX_PDF_BYTES) {
-    showError(`PDFs total ${(totalBytes / 1048576).toFixed(1)} MB — the API request limit is ~32 MB (base64 inflates files by a third). Compress the PDF (e.g. "Reduce File Size" in Preview) and retry.`);
-    btn.disabled = false; updateBtn();
-    return;
-  }
-
-  const contentBlocks = [];
-
-  try {
-    contentBlocks.push({
-      type: 'document',
-      source: { type: 'base64', media_type: 'application/pdf', data: await toBase64(files.paper) },
-      title: 'Main paper'
-    });
-    if (files.remark) {
-      contentBlocks.push({
-        type: 'document',
-        source: { type: 'base64', media_type: 'application/pdf', data: await toBase64(files.remark) },
-        title: 'Supplementary / rebuttal PDF'
-      });
-    }
-  } catch (e) {
-    showError('Could not read PDF: ' + e.message);
-    btn.disabled = false; updateBtn();
-    return;
-  }
-
-  const metadataReports = await Promise.all(pdfs.map(extractPdfMetadata));
-  const filenames = Object.values(files).filter(Boolean).map(f => f.name).join(', ');
-
-  const ctx = [
-    venue       ? `Submission venue: ${venue}` : '',
-    authors     ? `Author names to detect: ${authors}` : '',
-    institution ? `Institution / lab to detect: ${institution}` : '',
-    `Uploaded filenames (check these for identity leaks too): ${filenames}`,
-    `PDF document-info metadata, extracted client-side (you cannot see PDF metadata directly — judge these fields for identity leaks; an Author/Creator field containing a person's name or username is a high-severity anonymity violation):\n${metadataReports.join('\n')}`,
-    files.video ? `A supplemental video was also uploaded (${files.video.name}). Video content cannot be analyzed here — add a medium-severity anonymity item reminding the author to manually check the video's metadata tags, title cards, faces, and spoken names.` : ''
-  ].filter(Boolean).join('\n\n');
-
-  contentBlocks.push({
-    type: 'text',
-    text: `You are an expert reviewer checking a paper submission for anonymity violations and desk-reject risks.\n\nContext:\n${ctx}\n\nCheck ALL of the following and populate the issues array:\n\n1. ANONYMITY violations (category: "anonymity", severity: high/medium):\n- Author names anywhere (title page, acknowledgments, headers, figure captions, screenshots, URLs)\n- Institution / affiliation names, including indirect clues (campus names, "our university in <city>", deployment sites unique to one team)\n- First-person self-citations ("our previous work [12]") — venues require third-person\n- Acknowledgments naming people, grants, or grant numbers\n- IRB statements naming the real institution\n- GitHub / project / OSF / Drive URLs visible in the text that contain usernames or are not anonymized\n- Email addresses\n- Tool or system names uniquely tied to the authors\n\n2. DESK REJECT risks (category: "desk_reject", severity: high/medium/low):\n- Paper likely over the venue's page limit\n- Wrong template or genre for the venue\n- Missing required sections (abstract, related work, conclusion); broken citations ("??", "[?]")\n- Figures without captions; missing ethics or limitations statement where the venue requires one\n- Copyright / watermark on figures suggesting direct copy\n- Non-anonymous supplemental material indicators\n\n3. GENERAL QUALITY flags (category: "quality", severity: low):\n- Abstract does not summarize contributions clearly\n- No clear research question stated\n- Missing evaluation / study details\n\nFor every issue give a precise location (page number / section). If a category has no issues, include exactly one item for it with severity "ok" confirming what was checked. Be thorough but do not invent issues.`
+        const frames = [];
+        for (let i = 0; i < n; i++) {
+          const t = n === 1 ? dur / 2 : Math.min(Math.max(0.3, (dur - 0.6) * i / (n - 1) + 0.3), dur - 0.1);
+          await new Promise((res, rej) => {
+            video.onseeked = res;
+            video.onerror = () => rej(new Error('seek failed'));
+            video.currentTime = t;
+          });
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          frames.push({ time: t, data: canvas.toDataURL('image/jpeg', 0.7).split(',')[1] });
+        }
+        URL.revokeObjectURL(url);
+        resolve(frames);
+      } catch (e) {
+        fail(e.message);
+      }
+    };
   });
-
-  try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-opus-4-8',
-        max_tokens: 16000,
-        thinking: { type: 'adaptive' },
-        output_config: { format: { type: 'json_schema', schema: REPORT_SCHEMA } },
-        messages: [{ role: 'user', content: contentBlocks }]
-      })
-    });
-
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.error?.message || `API error ${resp.status}`);
-    }
-
-    const data = await resp.json();
-    if (data.stop_reason === 'refusal') {
-      throw new Error('The model declined to analyze this request.');
-    }
-    if (data.stop_reason === 'max_tokens') {
-      throw new Error('The report was truncated (max_tokens reached). Try again with a shorter document.');
-    }
-    // With output_config.format the text block is guaranteed valid JSON
-    // matching REPORT_SCHEMA; thinking blocks may precede it, so find by type.
-    const textBlock = data.content.find(b => b.type === 'text');
-    renderResults(JSON.parse(textBlock.text).issues);
-  } catch (e) {
-    showError(e.message);
-  }
-
-  btn.disabled = false;
-  updateBtn();
 }
 
-function showError(msg) {
-  document.getElementById('result-area').innerHTML = `
+/* ── Result slots: one card per file, replaced on re-check ── */
+
+function slotFor(kind) {
+  let el = document.getElementById('result-' + kind);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'result-' + kind;
+    // keep slots in a stable paper → remark → video order
+    const area = document.getElementById('result-area');
+    const after = KINDS.slice(KINDS.indexOf(kind) + 1)
+      .map(k => document.getElementById('result-' + k)).find(Boolean);
+    area.insertBefore(el, after || null);
+  }
+  return el;
+}
+
+function fileHeader(kind, icon) {
+  const name = files[kind] ? files[kind].name : kind;
+  return `<div class="result-file"><i class="ti ${icon}" aria-hidden="true"></i>${esc(name)}</div>`;
+}
+
+function setLoading(kind, msg) {
+  slotFor(kind).innerHTML = `
     <div class="result-card">
+      ${fileHeader(kind, 'ti-file-search')}
+      <div class="loading-wrap">
+        <div class="dots"><span></span><span></span><span></span></div>
+        <span class="loading-msg">${esc(msg)}</span>
+      </div>
+    </div>`;
+}
+
+function showError(kind, msg) {
+  slotFor(kind).innerHTML = `
+    <div class="result-card">
+      ${fileHeader(kind, 'ti-file-alert')}
       <div class="error-box">
         <i class="ti ti-alert-circle" style="font-size:18px;flex-shrink:0;" aria-hidden="true"></i>
         <div><strong>Analysis failed</strong><br>${esc(msg)}</div>
@@ -754,7 +784,185 @@ function showError(msg) {
     </div>`;
 }
 
-function renderResults(issues) {
+/* ── Checks ── */
+
+async function checkPart(kind) {
+  if (!files[kind] || running) return;
+  running = true;
+  updateBtn();
+  try {
+    if (kind === 'video') await checkVideo();
+    else await checkPdf(kind);
+  } finally {
+    running = false;
+    updateBtn();
+  }
+}
+
+async function checkAll() {
+  if (running) return;
+  for (const kind of KINDS) {
+    if (files[kind]) await checkPart(kind);
+  }
+}
+
+function sharedContext(kind) {
+  const venue       = document.getElementById('venue-type').value;
+  const authors     = document.getElementById('author-names').value.trim();
+  const institution = document.getElementById('institution').value.trim();
+  return [
+    venue       ? `Submission venue: ${venue}` : '',
+    authors     ? `Author names to detect: ${authors}` : '',
+    institution ? `Institution / lab to detect: ${institution}` : '',
+    `Filename (check it for identity leaks too): ${files[kind].name}`
+  ].filter(Boolean).join('\n');
+}
+
+async function checkPdf(kind) {
+  const file = files[kind];
+  if (file.size > MAX_PDF_BYTES) {
+    showError(kind, `This PDF is ${(file.size / 1048576).toFixed(1)} MB — the API request limit is ~32 MB and base64 inflates files by a third. Compress it (e.g. "Reduce File Size" in Preview) and retry.`);
+    return;
+  }
+  setLoading(kind, 'Reading metadata, then analyzing with Claude… this can take a minute');
+
+  let b64, meta;
+  try {
+    [b64, meta] = await Promise.all([toBase64(file), extractPdfMetadata(file)]);
+  } catch (e) {
+    showError(kind, 'Could not read PDF: ' + e.message);
+    return;
+  }
+
+  const docTitle = kind === 'paper' ? 'Main paper' : 'Supplementary / rebuttal PDF';
+  const blocks = [
+    { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 }, title: docTitle },
+    { type: 'text', text:
+`You are an expert reviewer checking one file of a paper submission (${docTitle}) for anonymity violations and desk-reject risks.
+
+Context:
+${sharedContext(kind)}
+
+PDF document-info metadata, extracted client-side (you cannot see PDF metadata directly — judge these fields; an Author/Creator field containing a person's name or username is a high-severity anonymity violation):
+${meta}
+
+Check ALL of the following and populate the issues array:
+
+1. ANONYMITY violations (category: "anonymity", severity: high/medium):
+- Author names anywhere (title page, acknowledgments, headers, figure captions, screenshots, URLs)
+- Institution / affiliation names, including indirect clues (campus names, "our university in <city>", deployment sites unique to one team)
+- First-person self-citations ("our previous work [12]") — venues require third-person
+- Acknowledgments naming people, grants, or grant numbers
+- IRB statements naming the real institution
+- GitHub / project / OSF / Drive URLs visible in the text that contain usernames or are not anonymized
+- Email addresses
+- Tool or system names uniquely tied to the authors
+
+2. DESK REJECT risks (category: "desk_reject", severity: high/medium/low):
+- Likely over the venue's page limit; wrong template or genre for the venue
+- Missing required sections; broken citations ("??", "[?]")
+- Figures without captions; missing ethics or limitations statement where the venue requires one
+- Copyright / watermark on figures suggesting direct copy
+- Non-anonymous supplemental material indicators
+
+3. GENERAL QUALITY flags (category: "quality", severity: low):
+- Abstract does not summarize contributions clearly; no clear research question; missing evaluation details
+${kind === 'remark' ? '(For a supplementary/rebuttal document, quality flags may not apply — return one "ok" item for that category if so.)' : ''}
+
+For every issue give a precise location (page number / section). If a category has no issues, include exactly one item for it with severity "ok" confirming what was checked. Be thorough but do not invent issues.` }
+  ];
+
+  try {
+    renderResults(kind, await callClaude(blocks));
+  } catch (e) {
+    showError(kind, e.message);
+  }
+}
+
+async function checkVideo() {
+  setLoading('video', 'Sampling frames in your browser — the video itself never leaves your machine…');
+
+  let frames;
+  try {
+    frames = await sampleVideoFrames(files.video);
+  } catch (e) {
+    showError('video', `Could not decode this video in the browser (${e.message}). Convert it to MP4 (H.264) and retry — or use the Claude Code skill for a full local check including audio and metadata.`);
+    return;
+  }
+
+  setLoading('video', `Analyzing ${frames.length} sampled frames with Claude…`);
+
+  const blocks = [];
+  for (const f of frames) {
+    blocks.push({ type: 'text', text: `Frame at ${f.time.toFixed(1)}s:` });
+    blocks.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: f.data } });
+  }
+  blocks.push({ type: 'text', text:
+`These are ${frames.length} frames sampled evenly from a supplemental video for a paper submission (duration covered: 0–${frames[frames.length - 1].time.toFixed(0)}s).
+
+Context:
+${sharedContext('video')}
+
+Check every frame for anonymity violations (category: "anonymity") and desk-reject risks (category: "desk_reject"):
+- Title or credit cards showing names, institutions, or logos
+- Faces of identifiable people
+- Recognizable buildings, campuses, or deployment locations
+- Screen recordings showing account names, avatars, menu-bar usernames, browser bookmarks, or file paths (e.g. /Users/<name>/)
+- Burned-in subtitles or captions containing identifying information
+- Watermarks
+
+Use the frame timestamp as the location for each finding.
+
+IMPORTANT caveats to always include as findings:
+- One medium-severity "anonymity" item: the audio track was NOT analyzed — the author must listen for spoken names/institutions and consider voice disguising.
+- One medium-severity "anonymity" item: the video file's metadata tags were NOT analyzed — strip them before submission with: ffmpeg -i in.mp4 -map_metadata -1 -c copy out.mp4
+- Only ${frames.length} frames were sampled; brief identity exposures between samples may be missed.
+
+If a category has no issues beyond the caveats, include one item with severity "ok". Include exactly one "quality" item with severity "ok" (quality is not assessable from sampled frames).` });
+
+  try {
+    renderResults('video', await callClaude(blocks));
+  } catch (e) {
+    showError('video', e.message);
+  }
+}
+
+async function callClaude(contentBlocks) {
+  const apiKey = document.getElementById('api-key').value.trim();
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-opus-4-8',
+      max_tokens: 16000,
+      thinking: { type: 'adaptive' },
+      output_config: { format: { type: 'json_schema', schema: REPORT_SCHEMA } },
+      messages: [{ role: 'user', content: contentBlocks }]
+    })
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${resp.status}`);
+  }
+
+  const data = await resp.json();
+  if (data.stop_reason === 'refusal') throw new Error('The model declined to analyze this request.');
+  if (data.stop_reason === 'max_tokens') throw new Error('The report was truncated (max_tokens reached). Try a shorter file.');
+  // With output_config.format the text block is guaranteed valid JSON matching
+  // REPORT_SCHEMA; thinking blocks may precede it, so find by type.
+  const textBlock = data.content.find(b => b.type === 'text');
+  return JSON.parse(textBlock.text).issues;
+}
+
+/* ── Rendering ── */
+
+function renderResults(kind, issues) {
   const high = issues.filter(i => i.severity === 'high').length;
   const med  = issues.filter(i => i.severity === 'medium').length;
   const low  = issues.filter(i => i.severity === 'low').length;
@@ -763,6 +971,7 @@ function renderResults(issues) {
   const catOrder = ['anonymity', 'desk_reject', 'quality'];
 
   let html = '<div class="result-card">';
+  html += fileHeader(kind, 'ti-file-check');
 
   // Summary chips
   html += '<div class="summary-row">';
@@ -798,7 +1007,7 @@ function renderResults(issues) {
   }
 
   html += '</div>';
-  document.getElementById('result-area').innerHTML = html;
+  slotFor(kind).innerHTML = html;
 }
 
 function esc(s) {
